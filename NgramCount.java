@@ -21,7 +21,7 @@ public class NgramCount {
 
     public void map(Object key, Text value, Context context
     ) throws IOException, InterruptedException {
-      int N = Integer.parseInt(conf.get("N"));
+      int N = Integer.parseInt(context.getConfiguration().get("N"));
       StringTokenizer itr = new StringTokenizer(value.toString());
       while (itr.hasMoreTokens()) {
         word.set(itr.nextToken());
