@@ -11,7 +11,7 @@ import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
-public class NgramCount {
+public class WordLengthCount {
 
   public static class TokenizerMapper
       extends Mapper<Object, Text, IntWritable, IntWritable> {
@@ -21,7 +21,6 @@ public class NgramCount {
 
     public void map(Object key, Text value, Context context
     ) throws IOException, InterruptedException {
-      int N = Integer.parseInt(context.getConfiguration().get("N"));
       StringTokenizer itr = new StringTokenizer(value.toString());
       while (itr.hasMoreTokens()) {
         word.set(itr.nextToken());
@@ -49,10 +48,8 @@ public class NgramCount {
 
   public static void main(String[] args) throws Exception {
     Configuration conf = new Configuration();
-    conf.set("N", args[2]);
-    conf.set("mapreduce.textoutputformat.separator", " ");
-    Job job = Job.getInstance(conf, "word count");
-    job.setJarByClass(NgramCount.class);
+    Job job = Job.getInstance(conf, "word length count");
+    job.setJarByClass(WordLengthCount.class);
     job.setMapperClass(TokenizerMapper.class);
     job.setCombinerClass(IntSumReducer.class);
     job.setReducerClass(IntSumReducer.class);
