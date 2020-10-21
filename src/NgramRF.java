@@ -3,6 +3,7 @@ import java.util.ArrayList;
 import java.util.StringTokenizer;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.FloatWritable;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.MapWritable;
 import org.apache.hadoop.io.Text;
@@ -13,12 +14,13 @@ import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
-public class NgramCount {
+public class NgramRF {
+
+  private final static IntWritable one = new IntWritable(1);
 
   public static class TokenizerMapper
       extends Mapper<Object, Text, Text, MapWritable> {
 
-    private final static IntWritable one = new IntWritable(1);
     private ArrayList<String> wordsFromLastLine = new ArrayList<String>();
 
     public void map(Object key, Text value, Context context)
@@ -92,30 +94,35 @@ public class NgramCount {
   }
 
   public static class MapReducer
-      extends Reducer<Text, MapWritable, Text, IntWritable> {
+      extends Reducer<Text, MapWritable, Text, Writable> {
 
-    private MapWritable map = new MapWritable();
+    private static final String COUNTER_STRING = new String("*");
+    private static final Text COUNTER_KEY = new Text(COUNTER_STRING);
+    private MapWritable map = new MapWritable();  // First level map
 
     public void reduce(Text key, Iterable<MapWritable> values,
         Context context
     ) throws IOException, InterruptedException {
-      MapWritable mMap = null;
+      MapWritable mMap = null; // Second level map
 
       if (map.containsKey(key)) {
         mMap = (MapWritable) map.get(key);
       } else {
         mMap = new MapWritable();
+        mMap.put(COUNTER_KEY, new IntWritable(0));
       }
 
       for (MapWritable val : values) {
         for (MapWritable.Entry<Writable, Writable> pair : val.entrySet()) {
           Writable secondKey = pair.getKey();
           Writable value = pair.getValue();
+          // Is it first time appear
           if (mMap.containsKey(secondKey)) {
             increaseOccurrences(mMap, secondKey, (IntWritable) value);
           } else {
             mMap.put(secondKey, value);
           }
+          increaseOccurrences(mMap, COUNTER_KEY, one); // Increase total count
         }
       }
 
@@ -127,12 +134,21 @@ public class NgramCount {
     protected void cleanup(Context context) throws IOException, InterruptedException {
       super.cleanup(context);
 
+      final float theta = Float.parseFloat(context.getConfiguration().get("theta"));
+
       for (MapWritable.Entry<Writable, Writable> first : map.entrySet()) {
         MapWritable secondMap = (MapWritable) first.getValue();
+        float totalOccurrences = ((IntWritable) secondMap.get(COUNTER_KEY)).get();
+        secondMap.remove(COUNTER_KEY);
+
         for (MapWritable.Entry<Writable, Writable> second : secondMap.entrySet()) {
           String key = first.getKey().toString() + " " + ((Text) second.getKey()).toString();
-          IntWritable result = ((IntWritable) second.getValue());
-          context.write(new Text(key), result);
+          IntWritable occurrence = ((IntWritable) second.getValue());
+          float mTheta = occurrence.get() / totalOccurrences;
+
+          if (mTheta >= theta) {
+            context.write(new Text(key), mTheta == 1.0 ? one : new FloatWritable(mTheta));
+          }
         }
       }
     }
@@ -147,13 +163,14 @@ public class NgramCount {
   public static void main(String[] args) throws Exception {
     Configuration conf = new Configuration();
     conf.set("N", args[2]);
+    conf.set("theta", args[3]);
     conf.set("mapreduce.textoutputformat.separator", " ");
-    Job job = Job.getInstance(conf, "n gram");
-    job.setJarByClass(NgramCount.class);
+    Job job = Job.getInstance(conf, "n gram rf");
+    job.setJarByClass(NgramRF.class);
     job.setMapperClass(TokenizerMapper.class);
     job.setReducerClass(MapReducer.class);
     job.setOutputKeyClass(Text.class);
-    job.setOutputValueClass(IntWritable.class);
+    job.setOutputValueClass(Writable.class);
     job.setMapOutputValueClass(MapWritable.class);
     FileInputFormat.addInputPath(job, new Path(args[0]));
     FileOutputFormat.setOutputPath(job, new Path(args[1]));
